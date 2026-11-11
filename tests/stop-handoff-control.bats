@@ -1049,7 +1049,7 @@ FLAG_OK='Removed video_h.
     [ -f "$FX/$name.prompt" ] && cp "$FX/$name.prompt" "$HANDOFF_CTL_HOME/prompts/t1.last-prompt" \
                               || rm -f "$HANDOFF_CTL_HOME/prompts/t1.last-prompt"
     local tp="" got conf was ok n0 n1
-    [ -f "$FX/$name.transcript.jsonl" ] && tp="$FX/$name.transcript.jsonl"
+    [ -f "$FX/$name.transcript" ] && tp="$FX/$name.transcript"
     n0=$(test -f "$HANDOFF_CTL_LOG" && wc -l < "$HANDOFF_CTL_LOG" || echo 0)
     jq -n --rawfile m "$FX/$name.txt" --arg tp "$tp" \
       '{last_assistant_message:$m, stop_hook_active:false, session_id:"t1"}

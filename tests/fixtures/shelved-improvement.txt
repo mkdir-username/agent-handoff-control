@@ -1,0 +1,3 @@
+The search endpoint now answers in 120 ms: the index is warmed on startup.
+
+Nice-to-have: switch the client to a streaming response. I will leave it unless you say.

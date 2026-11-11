@@ -1,0 +1,6 @@
+Removed `video_h`, `faq_h`, `faq_button_h` from `heightVars()`.
+
+⚠️ RESPONSIBLE ZONE — three layout helpers removed
+   Evidence: `rg -n 'video_h|faq_h|faq_button_h'` → no references; dead-code scan → DEAD
+   Rollback: `git revert 1a2b3c4`
+   Ok / not ok?

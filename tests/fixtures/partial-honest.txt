@@ -1,0 +1,4 @@
+Migrated the loader; the legacy `timeout` key still maps to `request.timeout` for one release.
+
+Deferred: dropping the legacy key — the schema owner has not approved the removal,
+`docs/schema.md` says the key is frozen until the next major.

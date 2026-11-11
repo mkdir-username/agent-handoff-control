@@ -1,0 +1,2 @@
+Two equal options: local disk and S3. Neither contains the other and the choice changes the
+deployment; I put the choice to you with AskUserQuestion.

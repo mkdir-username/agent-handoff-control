@@ -1,0 +1,3 @@
+Release v2.4.0 is built and tagged, staging smoke tests pass (`npm run smoke -- --env staging` → 42/42).
+The production deploy job requires a 2FA approval in the CI dashboard, which only you can give.
+Everything else is done — approve the job and it rolls out automatically.

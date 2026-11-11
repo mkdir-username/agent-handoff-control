@@ -1,0 +1,3 @@
+Merge keeps both histories and adds a merge commit; rebase replays your commits on top of the
+target branch, giving a linear history but rewriting commit hashes. Use rebase for local
+branches nobody else has pulled, merge for shared ones.

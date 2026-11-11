@@ -1,0 +1,4 @@
+Refactor done: the parser now consumes the token stream.
+
+Deferred: removing the old branch — it needs the schema owner's approval, `docs/schema.md`
+says the branch is frozen for one release.

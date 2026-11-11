@@ -1,0 +1,3 @@
+Retries are in: src/http/client.ts wraps fetch in an exponential backoff (3 attempts, 250 ms base).
+
+👉 Next: adding unit tests for the retry path.

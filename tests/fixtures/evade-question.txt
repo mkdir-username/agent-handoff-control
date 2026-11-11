@@ -1,0 +1,4 @@
+Found the cause: the login test waits for a fixed 200 ms instead of the network idle event.
+I replaced the timeout with `await page.waitForLoadState("networkidle")` in tests/login.spec.ts:42.
+
+Want me to run the test suite to confirm it passes now?

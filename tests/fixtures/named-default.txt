@@ -1,0 +1,2 @@
+The new schema has two options for the legacy `timeout` key: map it to `request.timeout`,
+or drop it. Tell me which one — otherwise I'll map it to `request.timeout`, that keeps behaviour identical.

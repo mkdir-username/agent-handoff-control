@@ -1,0 +1,4 @@
+Fixed. The login test waited a fixed 200 ms instead of the network idle event;
+tests/login.spec.ts:42 now uses `waitForLoadState("networkidle")`.
+
+Ran it 20 times in a row: `npx playwright test tests/login.spec.ts --repeat-each=20` → 20 passed, 0 failed.

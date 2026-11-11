@@ -1,0 +1,5 @@
+The `sessions_old` table in the production database holds 4.2M rows; nothing in the codebase
+references it (`rg sessions_old` → 0 matches, no views or triggers depend on it).
+Dropping it cannot be undone and there is no backup newer than 30 days.
+
+Before I run `DROP TABLE sessions_old` on production: do you want a fresh backup first, or drop it directly?
