@@ -23,8 +23,14 @@ HANDOFF_CTL_LOG="${HANDOFF_CTL_LOG:-$HANDOFF_CTL_HOME/verdicts.jsonl}"
 THRESHOLD="${HANDOFF_CTL_THRESHOLD:-0.90}"
 SOFT_THRESHOLD="${HANDOFF_CTL_SOFT_THRESHOLD:-0.80}"
 API_URL="${HANDOFF_CTL_API_URL:-https://api.deepseek.com/anthropic/v1/messages}"
-API_KEY="${HANDOFF_CTL_API_KEY:-${DEEPSEEK_API_KEY:-}}"
+API_KEY="${HANDOFF_CTL_API_KEY:-${DEEPSEEK_API_KEY:-${OPENCODE_API_KEY:-}}}"
 MODEL="${HANDOFF_CTL_MODEL:-deepseek-flash}"
+WIRE="${HANDOFF_CTL_WIRE:-anthropic}"
+CURL_BIN="${HANDOFF_CTL_CURL:-curl}"
+MAX_TOKENS="${HANDOFF_CTL_MAX_TOKENS:-8000}"
+CALL_TIMEOUT="${HANDOFF_CTL_TIMEOUT:-60}"
+BUDGET="${HANDOFF_CTL_BUDGET:-90}"
+OPENCODE=0; case "$API_URL" in *opencode.ai*) OPENCODE=1 ;; esac
 
 INPUT=$(cat)
 # shellcheck source=lib/stop-rewake-guard.sh
@@ -58,9 +64,19 @@ LAST_TEXT=$(echo "$INPUT" | jq -r '.last_assistant_message // empty' 2>/dev/null
 ask_controller() {
   if [ -n "${HANDOFF_CTL_CMD:-}" ]; then "$HANDOFF_CTL_CMD"; return; fi
   [ -n "$API_KEY" ] || return 1
-  curl -s -m "${HANDOFF_CTL_TIMEOUT:-40}" "$API_URL" \
-    -H "x-api-key: $API_KEY" -H "anthropic-version: 2023-06-01" \
-    -H "content-type: application/json" --data-binary @-
+  # The hook's whole budget is 90 s by default: a 60 s judge call leaves room for the obligation.
+  local m="$CALL_TIMEOUT" left=$(( BUDGET - SECONDS ))
+  [ "$left" -lt "$m" ] && m=$left
+  [ "$m" -ge 5 ] || return 1
+  if [ "$WIRE" = openai ]; then
+    local h=(-H "authorization: Bearer $API_KEY" -H "content-type: application/json")
+    # The OpenCode Go gateway rejects requests without a session id.
+    [ "$OPENCODE" = 1 ] && h+=(-H "x-opencode-session: handoff-${SESSION_ID:-$$}")
+    "$CURL_BIN" -s -m "$m" "$API_URL" "${h[@]}" --data-binary @-
+  else
+    "$CURL_BIN" -s -m "$m" "$API_URL" -H "x-api-key: $API_KEY" \
+      -H "anthropic-version: 2023-06-01" -H "content-type: application/json" --data-binary @-
+  fi
 }
 
 # Optional calibrator. Self-reported confidence of an LLM judge clusters at 0.85/0.90/0.95 and
@@ -70,7 +86,7 @@ ask_controller() {
 ask_calibrator() {
   if [ -n "${HANDOFF_CTL_CALIB_CMD:-}" ]; then "$HANDOFF_CTL_CALIB_CMD"; return; fi
   [ -n "$API_KEY" ] || [ -n "${HANDOFF_CTL_CALIB_KEY:-}" ] || return 1
-  curl -s -m "${HANDOFF_CTL_CALIB_TIMEOUT:-10}" "${HANDOFF_CTL_CALIB_URL:-https://api.deepseek.com/v1/chat/completions}" \
+  "$CURL_BIN" -s -m "${HANDOFF_CTL_CALIB_TIMEOUT:-10}" "${HANDOFF_CTL_CALIB_URL:-https://api.deepseek.com/v1/chat/completions}" \
     -H "Authorization: Bearer ${HANDOFF_CTL_CALIB_KEY:-$API_KEY}" \
     -H "content-type: application/json" --data-binary @-
 }
@@ -277,23 +293,30 @@ if [ "$CONTINUED" = "0" ] && [ -s "$OBL_FILE" ]; then
     exit 0
   fi
 
-  OBL_BODY=$(jq -n --rawfile rubric "$OBL_RUBRIC" --rawfile final "$TMP_FINAL" \
+  OBL_BODY=$(jq -n --arg wire "$WIRE" --argjson open "$OPENCODE" \
+    --rawfile rubric "$OBL_RUBRIC" --rawfile final "$TMP_FINAL" \
     --arg model "$MODEL" --arg act "$OBL_ACTION" --arg prompt "${USER_PROMPT:-—}" \
-    --arg tools "${TOOLS:-—}" --arg fails "${FAILS:-—}" \
-    '{model:$model, max_tokens:2000, system:$rubric,
-      messages:[{role:"user", content:
-        ("OPEN OBLIGATION FROM PREVIOUS TURN:\n<<<\n" + $act + "\n>>>\n\n" +
-         "USER REQUEST THIS TURN:\n<<<\n" + $prompt + "\n>>>\n\n" +
-         "TOOLS CALLED THIS TURN: " + $tools + "\n\n" +
-         "CALL RESULTS:\n" + $fails + "\n\n" +
-         "FINAL MESSAGE TO THE USER:\n<<<\n" + $final + "\n>>>")}]}' 2>/dev/null) || exit 0
+    --arg tools "${TOOLS:-—}" --arg fails "${FAILS:-—}" '
+    ("OPEN OBLIGATION FROM PREVIOUS TURN:\n<<<\n" + $act + "\n>>>\n\n" +
+     "USER REQUEST THIS TURN:\n<<<\n" + $prompt + "\n>>>\n\n" +
+     "TOOLS CALLED THIS TURN: " + $tools + "\n\n" +
+     "CALL RESULTS:\n" + $fails + "\n\n" +
+     "FINAL MESSAGE TO THE USER:\n<<<\n" + $final + "\n>>>") as $content
+    | if $wire == "openai" then
+        {model:$model, max_tokens:2000,
+         messages:[{role:"system",content:$rubric},{role:"user",content:$content}]}
+        + (if $open == 1 then {thinking:{type:"disabled"}} else {} end)
+      else
+        {model:$model, max_tokens:2000, system:$rubric,
+         messages:[{role:"user",content:$content}]}
+      end' 2>/dev/null) || exit 0
 
   OBL_RAW=$(printf '%s' "$OBL_BODY" | ask_controller 2>/dev/null) || ctl_down
   [ -n "$OBL_RAW" ] || ctl_down
   ctl_check "$OBL_RAW"
   ctl_up
   OBL_JSON=$(printf '%s' "$OBL_RAW" \
-    | jq -r '[.content[]? | select(.type=="text") | .text] | join("")' 2>/dev/null) || exit 0
+    | jq -r '.choices[0].message.content // ([.content[]? | select(.type=="text") | .text] | join(""))' 2>/dev/null) || exit 0
   OBL_JSON=$(printf '%s' "$OBL_JSON" | sed -E 's/^```[a-z]*//; s/```$//' | tr -d '\r')
   # Fail-open: no parseable answer — the obligation stays open, the counter does not grow.
   echo "$OBL_JSON" | jq -e 'has("ok")' >/dev/null 2>&1 || exit 0
@@ -347,16 +370,22 @@ and the turn will not be returned again." \
 fi
 
 # deepseek-flash spends tokens on thinking before the verdict
-BODY=$(jq -n --rawfile rubric "$RUBRIC" --rawfile final "$TMP_FINAL" \
-  --arg model "$MODEL" --arg prompt "${USER_PROMPT:-—}" --arg tools "${TOOLS:-—}" \
-  --arg waits "$WAITS" --arg wsum "$WAIT_SUM" --arg dur "${TURN_SEC:-0}" --arg fails "${FAILS:-—}" \
-  '{model:$model, max_tokens:4000, system:$rubric,
-    messages:[{role:"user", content:
-      ("USER REQUEST THIS TURN:\n<<<\n" + $prompt + "\n>>>\n\n" +
-       "TOOLS CALLED THIS TURN: " + $tools + "\n\n" +
-       "CALL RESULTS:\n" + $fails + "\n\n" +
-       "LONG FOREGROUND WAITS: " + $waits + " (total " + $wsum + " s), TURN DURATION: " + $dur + " s\n\n" +
-       "FINAL MESSAGE TO THE USER:\n<<<\n" + $final + "\n>>>")}]}' \
+BODY=$(jq -n --arg wire "$WIRE" --argjson open "$OPENCODE" --rawfile rubric "$RUBRIC" --rawfile final "$TMP_FINAL" \
+  --arg model "$MODEL" --argjson maxtok "$MAX_TOKENS" --arg prompt "${USER_PROMPT:-—}" --arg tools "${TOOLS:-—}" \
+  --arg waits "$WAITS" --arg wsum "$WAIT_SUM" --arg dur "${TURN_SEC:-0}" --arg fails "${FAILS:-—}" '
+  ("USER REQUEST THIS TURN:\n<<<\n" + $prompt + "\n>>>\n\n" +
+   "TOOLS CALLED THIS TURN: " + $tools + "\n\n" +
+   "CALL RESULTS:\n" + $fails + "\n\n" +
+   "LONG FOREGROUND WAITS: " + $waits + " (total " + $wsum + " s), TURN DURATION: " + $dur + " s\n\n" +
+   "FINAL MESSAGE TO THE USER:\n<<<\n" + $final + "\n>>>") as $content
+  | if $wire == "openai" then
+      {model:$model, max_tokens:$maxtok,
+       messages:[{role:"system",content:$rubric},{role:"user",content:$content}]}
+      + (if $open == 1 then {thinking:{type:"disabled"}} else {} end)
+    else
+      {model:$model, max_tokens:$maxtok, system:$rubric,
+       messages:[{role:"user",content:$content}]}
+    end' \
   2>/dev/null) || exit 0
 
 RAW=$(printf '%s' "$BODY" | ask_controller 2>/dev/null) || ctl_down
@@ -364,11 +393,30 @@ RAW=$(printf '%s' "$BODY" | ask_controller 2>/dev/null) || ctl_down
 ctl_check "$RAW"
 ctl_up
 
+STOP_REASON=$(printf '%s' "$RAW" | jq -r '.choices[0].finish_reason // .stop_reason // ""' 2>/dev/null)
 VERDICT_JSON=$(printf '%s' "$RAW" \
-  | jq -r '[.content[]? | select(.type=="text") | .text] | join("")' 2>/dev/null) || exit 0
+  | jq -r '.choices[0].message.content // ([.content[]? | select(.type=="text") | .text] | join(""))' 2>/dev/null) || exit 0
 # Judges sometimes wrap JSON in a markdown fence even when told not to.
 VERDICT_JSON=$(printf '%s' "$VERDICT_JSON" | sed -E 's/^```[a-z]*//; s/```$//' | tr -d '\r')
-echo "$VERDICT_JSON" | jq -e '.verdict and .confidence' >/dev/null 2>&1 || exit 0
+# An empty text under a length stop is not a verdict: the model spent the budget on thinking.
+# Without a record the turn passes silently and the starvation is invisible.
+if [ -z "$VERDICT_JSON" ] && { [ "$STOP_REASON" = "length" ] || [ "$STOP_REASON" = "max_tokens" ]; }; then
+  mkdir -p "$(dirname "$HANDOFF_CTL_LOG")" 2>/dev/null || true
+  jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg s "$SESSION_ID" \
+    '{ts:$ts,session:$s,verdict:"TRUNCATED",confidence:null,blocked:false,
+      why:"judge answer ended by the token limit, no verdict"}' >> "$HANDOFF_CTL_LOG" 2>/dev/null || true
+  exit 0
+fi
+# A degraded rubric must be visible in the log, not silently pass every turn.
+bad_verdict() {
+  mkdir -p "$(dirname "$HANDOFF_CTL_LOG")" 2>/dev/null || true
+  jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg s "$SESSION_ID" --arg v "$1" \
+    '{ts:$ts,session:$s,verdict:"BAD_VERDICT",confidence:null,blocked:false,raw:$v}' \
+    >> "$HANDOFF_CTL_LOG" 2>/dev/null || true
+  exit 0
+}
+echo "$VERDICT_JSON" | jq -e '.verdict and .confidence' >/dev/null 2>&1 \
+  || bad_verdict "$(printf '%s' "$VERDICT_JSON" | head -c 200)"
 
 VERDICT=$(echo "$VERDICT_JSON" | jq -r '.verdict')
 CONF=$(echo "$VERDICT_JSON" | jq -r '.confidence')

@@ -11,7 +11,8 @@ setup() {
   ST="$HANDOFF_CTL_HOME/state"
   export HANDOFF_CTL_LOG="$BATS_TEST_TMPDIR/verdicts.jsonl"
   export HANDOFF_CTL_DOWN_FILE="$BATS_TEST_TMPDIR/ctl-down"
-  unset ANTHROPIC_API_KEY DEEPSEEK_API_KEY HANDOFF_CTL_API_KEY HANDOFF_CTL_CALIB HANDOFF_CTL_COMMIT_IN_DIALOG
+  unset ANTHROPIC_API_KEY DEEPSEEK_API_KEY HANDOFF_CTL_API_KEY HANDOFF_CTL_CALIB HANDOFF_CTL_COMMIT_IN_DIALOG \
+    OPENCODE_API_KEY HANDOFF_CTL_WIRE HANDOFF_CTL_CURL HANDOFF_CTL_MAX_TOKENS HANDOFF_CTL_BUDGET HANDOFF_CTL_TIMEOUT
   mkdir -p "$ST" "$HANDOFF_CTL_HOME/prompts"
 }
 
@@ -24,6 +25,18 @@ mkcontrol() {
   } > "$BATS_TEST_TMPDIR/controller"
   chmod +x "$BATS_TEST_TMPDIR/controller"
   export HANDOFF_CTL_CMD="$BATS_TEST_TMPDIR/controller"
+}
+
+# Transport mock: records curl argv and stdin, answers with the given JSON.
+mkWire() {   # <answer-json>
+  {
+    echo '#!/bin/sh'
+    echo "printf '%s\\n' \"\$@\" > \"$BATS_TEST_TMPDIR/curl.args\""
+    echo "cat > \"$BATS_TEST_TMPDIR/curl.body\""
+    printf 'cat <<%s\n%s\n%s\n' "'JSONEOF'" "$1" "JSONEOF"
+  } > "$BATS_TEST_TMPDIR/curl"
+  chmod +x "$BATS_TEST_TMPDIR/curl"
+  export HANDOFF_CTL_CURL="$BATS_TEST_TMPDIR/curl"
 }
 
 # Anthropic-shaped answer; a thinking block first, as reasoning models send it.
@@ -282,7 +295,7 @@ PY
   [ "$(cat "$BATS_TEST_TMPDIR/hit")" = "sk-fallback" ]
 }
 
-@test "default judge request: deepseek-flash, max_tokens 4000" {
+@test "default judge request: deepseek-flash, max_tokens 8000" {
   unset HANDOFF_CTL_CMD HANDOFF_CTL_MODEL
   export HANDOFF_CTL_API_KEY=sk-test NO_PROXY=127.0.0.1 no_proxy=127.0.0.1
   PORT=$(python3 -c 'import socket;s=socket.socket();s.bind(("127.0.0.1",0));print(s.getsockname()[1]);s.close()')
@@ -300,7 +313,7 @@ PY
   sleep 0.3
   run run_hook 'Continue?'
   [ "$(jq -r .model "$BATS_TEST_TMPDIR/body")" = deepseek-flash ]
-  [ "$(jq -r .max_tokens "$BATS_TEST_TMPDIR/body")" = 4000 ]
+  [ "$(jq -r .max_tokens "$BATS_TEST_TMPDIR/body")" = 8000 ]
 }
 
 @test "bypass file skips the judge once" {
@@ -1151,4 +1164,40 @@ sent() { for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$BATS_TEST_TMPDIR/n.txt" ] && b
 ```
 🚧 waiting for the background agent.'
   [[ "$output" != *decision* ]]
+}
+
+# ── judge transport: Anthropic and OpenAI-compatible wires ─────────────────────────────────
+
+@test "wire=openai posts a chat-completions body and parses the answer" {
+  export HANDOFF_CTL_WIRE=openai HANDOFF_CTL_API_KEY=x \
+    HANDOFF_CTL_API_URL=https://opencode.ai/inference/go/v1/chat/completions HANDOFF_CTL_CALIB=0
+  mkWire '{"choices":[{"message":{"content":"{\"verdict\":\"MISSED_ACTION\",\"confidence\":0.95,\"why\":\"w\",\"action\":\"Run it\"}"}}]}'
+  run run_hook '👉 Next: adding the test.'
+  echo "$output" | jq -e '.decision == "block"'
+  grep -q 'authorization: Bearer x' "$BATS_TEST_TMPDIR/curl.args"
+  grep -q 'x-opencode-session: handoff-t1' "$BATS_TEST_TMPDIR/curl.args"
+  jq -e '.messages[0].role == "system" and .thinking.type == "disabled"' "$BATS_TEST_TMPDIR/curl.body"
+}
+
+@test "wire=anthropic still posts system at the top level" {
+  export HANDOFF_CTL_API_KEY=x
+  export HANDOFF_CTL_CALIB=0
+  mkWire '{"content":[{"type":"text","text":"{\"verdict\":\"OK\",\"confidence\":0.95}"}]}'
+  run run_hook 'Done.'
+  [[ "$output" != *decision* ]]
+  jq -e '.system != null and .messages[0].role == "user"' "$BATS_TEST_TMPDIR/curl.body"
+}
+
+@test "a truncated judge answer is logged as TRUNCATED, not silently dropped" {
+  export HANDOFF_CTL_API_KEY=x
+  mkWire '{"choices":[{"finish_reason":"length","message":{"content":""}}]}'
+  run run_hook 'x'
+  tail -1 "$HANDOFF_CTL_LOG" | jq -e '.verdict == "TRUNCATED"'
+}
+
+@test "an unparseable judge answer is logged as BAD_VERDICT" {
+  export HANDOFF_CTL_API_KEY=x
+  mkWire '{"choices":[{"message":{"content":"not json"}}]}'
+  run run_hook 'x'
+  tail -1 "$HANDOFF_CTL_LOG" | jq -e '.verdict == "BAD_VERDICT"'
 }
