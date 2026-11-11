@@ -44,8 +44,8 @@ reversible — they are not OK-1.
 SHELVED — the user raised the topic and the final names a fix, improvement or next step inside
 that topic and leaves it: defers it ("if it comes up", "not needed now"), offers it as optional,
 or asks with skipping recommended. Not SHELVED: a finding off the topic, a step handed to the
-user under an OK stop, or a legitimate stop. action: "Reconsider it: do it now, or write
-Deferred: <what> — <reason>."
+user under an OK stop, a legitimate stop, or a Deferred with a stated reason or blocking
+condition. action: "Reconsider it: do it now, or write Deferred: <what> — <reason>."
 
 MISSED_ACTION — there is no question, but the agent stopped in front of an available action it
 named itself: named an improvement and did not make it, announced "next I'll do X" and ended

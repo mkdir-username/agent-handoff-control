@@ -5,3 +5,13 @@ named-default	DUMB_QUESTION
 announced-not-done	MISSED_ACTION
 answered-question	OK
 human-gate	OK
+announced-step	MISSED_ACTION	y
+announced-question	DUMB_QUESTION	y
+false-completion	FALSE_COMPLETION|MISSED_ACTION	y
+shelved-improvement	SHELVED|MISSED_ACTION	n
+partial-honest	OK	n
+background-wait	OK	n
+responsible-zone	OK	n
+failed-call-unfixed	FALSE_COMPLETION|MISSED_ACTION	y
+equal-fork	OK	n
+deferred-reason	OK|SHELVED	n

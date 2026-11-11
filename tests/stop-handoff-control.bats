@@ -1039,16 +1039,21 @@ FLAG_OK='Removed video_h.
   unset HANDOFF_CTL_CMD
   export HANDOFF_CTL_API_KEY="${HANDOFF_CTL_LIVE_KEY:-}" HANDOFF_CTL_CALIB=0
   [ -z "${HANDOFF_CTL_LIVE_URL:-}" ] || export HANDOFF_CTL_API_URL="$HANDOFF_CTL_LIVE_URL"
+  [ -z "${HANDOFF_CTL_LIVE_WIRE:-}" ] || export HANDOFF_CTL_WIRE="$HANDOFF_CTL_LIVE_WIRE"
+  [ -z "${HANDOFF_CTL_LIVE_MODEL:-}" ] || export HANDOFF_CTL_MODEL="$HANDOFF_CTL_LIVE_MODEL"
   export HANDOFF_CTL_TIMEOUT="${HANDOFF_CTL_TIMEOUT:-90}"
   local fails=0
-  while IFS=$'\t' read -r name want; do
+  while IFS=$'\t' read -r name want blocked; do
     [ -n "$name" ] || continue
     rm -f "$ST"/t1.*
     [ -f "$FX/$name.prompt" ] && cp "$FX/$name.prompt" "$HANDOFF_CTL_HOME/prompts/t1.last-prompt" \
                               || rm -f "$HANDOFF_CTL_HOME/prompts/t1.last-prompt"
-    local got conf n0 n1
+    local tp="" got conf was ok n0 n1
+    [ -f "$FX/$name.transcript.jsonl" ] && tp="$FX/$name.transcript.jsonl"
     n0=$(test -f "$HANDOFF_CTL_LOG" && wc -l < "$HANDOFF_CTL_LOG" || echo 0)
-    jq -n --rawfile m "$FX/$name.txt" '{last_assistant_message:$m, stop_hook_active:false, session_id:"t1"}' \
+    jq -n --rawfile m "$FX/$name.txt" --arg tp "$tp" \
+      '{last_assistant_message:$m, stop_hook_active:false, session_id:"t1"}
+       + (if $tp != "" then {transcript_path:$tp} else {} end)' \
       | bash "$HOOK" >/dev/null
     n1=$(test -f "$HANDOFF_CTL_LOG" && wc -l < "$HANDOFF_CTL_LOG" || echo 0)
     if [ "$n1" = "$n0" ]; then
@@ -1057,10 +1062,20 @@ FLAG_OK='Removed video_h.
     fi
     got=$(tail -1 "$HANDOFF_CTL_LOG" | jq -r .verdict)
     conf=$(tail -1 "$HANDOFF_CTL_LOG" | jq -r .confidence)
-    if [ "$got" = "$want" ] || { [ "$want" = "OK" ] && awk -v c="$conf" 'BEGIN{exit !(c+0 < 0.9)}'; }; then
-      echo "# ok   $name → $got ($conf)" >&3
+    was=$(tail -1 "$HANDOFF_CTL_LOG" | jq -r .blocked)
+    ok=0
+    for w in ${want//|/ }; do [ "$got" = "$w" ] && ok=1; done
+    { [ "$want" = "OK" ] && awk -v c="$conf" 'BEGIN{exit !(c+0 < 0.9)}'; } && ok=1
+    if [ -n "$blocked" ]; then
+      case "$blocked" in
+        y) [ "$was" = "true" ] || ok=0 ;;
+        n) [ "$was" = "false" ] || ok=0 ;;
+      esac
+    fi
+    if [ "$ok" = 1 ]; then
+      echo "# ok   $name → $got ($conf, blocked=$was)" >&3
     else
-      echo "# FAIL $name → $got ($conf), expected $want" >&3
+      echo "# FAIL $name → $got ($conf, blocked=$was), expected $want blocked=${blocked:--}" >&3
       fails=$(( fails + 1 ))
     fi
   done < "$FX/expected.tsv"
