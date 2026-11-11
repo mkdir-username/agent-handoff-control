@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Removes claude-handoff-control hooks from ~/.claude/settings.json and deletes
+# Removes agent-handoff-control hooks from ~/.claude/settings.json and deletes
 # ~/.claude/handoff-control (hooks, rubrics, state and the verdict log).
 set -euo pipefail
 command -v jq >/dev/null 2>&1 || { echo "uninstall: 'jq' is required" >&2; exit 1; }
@@ -21,4 +21,4 @@ if [ -f "$SETTINGS" ]; then
   mv "$TMP" "$SETTINGS"
 fi
 rm -rf "$DEST"
-echo "claude-handoff-control removed. Restart Claude Code."
+echo "agent-handoff-control removed. Restart Claude Code."

@@ -1,4 +1,4 @@
-# claude-handoff-control
+# agent-handoff-control
 
 Made by and for developers tired of answering the obvious.
 
@@ -34,8 +34,8 @@ and you spend the time on strategy — or on your own things.
 Requires `bash`, `jq`, `curl`, `python3`, `perl`.
 
 ```bash
-git clone https://github.com/mkdir-username/claude-handoff-control.git
-cd claude-handoff-control && ./install.sh
+git clone https://github.com/mkdir-username/agent-handoff-control.git
+cd agent-handoff-control && ./install.sh
 export DEEPSEEK_API_KEY=sk-...   # or HANDOFF_CTL_API_KEY; put it in your shell profile
 ```
 

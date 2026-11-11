@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs claude-handoff-control into ~/.claude/handoff-control and registers its hooks in
+# Installs agent-handoff-control into ~/.claude/handoff-control and registers its hooks in
 # ~/.claude/settings.json. Idempotent; backs up settings.json before changing it.
 set -euo pipefail
 
@@ -53,7 +53,7 @@ jq --arg stop "$STOP" --arg cache "$CACHE" --arg lesson "$LESSON" \
 mv "$TMP" "$SETTINGS"
 
 cat <<MSG
-claude-handoff-control installed to $DEST
+agent-handoff-control installed to $DEST
 Hooks registered in $SETTINGS (backup saved next to it).
 
 Next: give the judge an API key, e.g. in your shell profile:

@@ -3,7 +3,7 @@
 #
 # A controller, not a reviewer: it never judges the quality of the work. It gets the names of the
 # tools called and the outcomes of failed calls, never call arguments or successful output.
-# An evasion returns {"decision":"block"} and Claude Code continues the SAME turn.
+# An evasion returns {"decision":"block"} and the agent runtime (Claude Code, DeepSeek Harness) continues the SAME turn.
 # A returned MISSED_ACTION becomes an obligation that is re-checked on every following Stop
 # until it is met, declared impossible, stalls, or expires.
 #
