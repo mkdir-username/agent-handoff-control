@@ -6,9 +6,12 @@ setup() {
   mkdir -p "$HOME/.claude"
   S="$HOME/.claude/settings.json"
   DEST="$HOME/.claude/handoff-control"
+  export DSH_HOME="$HOME/.dsh"
+  DSH_HOOKS="$DSH_HOME/agent-handoff-control.json"
 }
 
 cmds() { jq -r --arg e "$1" '[.hooks[$e][]?.hooks[]?.command] | .[]' "$S"; }
+dsh_cmds() { jq -r '[.hooks.Stop[]?.hooks[]?.command] | .[]' "$DSH_HOOKS"; }
 
 @test "install into missing settings.json registers one Stop and two UserPromptSubmit hooks" {
   run bash "$REPO/install.sh"
@@ -106,4 +109,53 @@ cmds() { jq -r --arg e "$1" '[.hooks[$e][]?.hooks[]?.command] | .[]' "$S"; }
   bash "$REPO/uninstall.sh" >/dev/null
   [ -z "$(cmds Notification)" ]
   [ -z "$(cmds Stop)" ]
+}
+
+# ── DeepSeek Harness ──────────────────────────────────────────────────────────────────────
+
+@test "install --dsh registers one DSH Stop hook and keeps the Claude hooks" {
+  run bash "$REPO/install.sh" --dsh
+  [ "$status" -eq 0 ]
+  [ "$(dsh_cmds | wc -l | tr -d ' ')" -eq 1 ]
+  dsh_cmds | grep -q 'stop-handoff-control-dsh.sh'
+  [ -f "$DEST/hooks/adapters/stop-handoff-control-dsh.sh" ]
+  cmds Stop | grep -q 'stop-handoff-control.sh'
+}
+
+@test "install --dsh twice does not duplicate the DSH hook" {
+  bash "$REPO/install.sh" --dsh >/dev/null
+  bash "$REPO/install.sh" --dsh >/dev/null
+  [ "$(dsh_cmds | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "install --dsh keeps foreign DSH hooks" {
+  mkdir -p "$DSH_HOME"
+  jq -n '{hooks:{Stop:[{hooks:[{type:"command",command:"bash /x/other.sh"}]}]}}' > "$DSH_HOOKS"
+  bash "$REPO/install.sh" --dsh >/dev/null
+  dsh_cmds | grep -qx 'bash /x/other.sh'
+  [ "$(dsh_cmds | wc -l | tr -d ' ')" -eq 2 ]
+}
+
+@test "uninstall removes the DSH hook but keeps foreign ones" {
+  mkdir -p "$DSH_HOME"
+  jq -n '{hooks:{Stop:[{hooks:[{type:"command",command:"bash /x/other.sh"}]}]}}' > "$DSH_HOOKS"
+  bash "$REPO/install.sh" --dsh >/dev/null
+  run bash "$REPO/uninstall.sh"
+  [ "$status" -eq 0 ]
+  [ "$(dsh_cmds)" = "bash /x/other.sh" ]
+  [ -f "$DSH_HOOKS" ]
+}
+
+@test "uninstall removes the DSH config when only our hook was there" {
+  bash "$REPO/install.sh" --dsh >/dev/null
+  bash "$REPO/uninstall.sh" >/dev/null
+  [ ! -f "$DSH_HOOKS" ]
+}
+
+@test "install --dsh refuses an invalid DSH hook config" {
+  mkdir -p "$DSH_HOME"
+  echo '{broken' > "$DSH_HOOKS"
+  run bash "$REPO/install.sh" --dsh
+  [ "$status" -ne 0 ]
+  [ "$(cat "$DSH_HOOKS")" = '{broken' ]
 }
