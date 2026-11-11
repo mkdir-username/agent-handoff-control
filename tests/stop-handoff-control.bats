@@ -1127,3 +1127,28 @@ sent() { for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$BATS_TEST_TMPDIR/n.txt" ] && b
   echo "$output" | jq -e '.decision == "block"'
   [ "$(cat "$ST/t1.cascade")" = "2" ]
 }
+
+# ── announced next step: deterministic threshold ───────────────────────────────────────────
+
+@test "announcement: a bare 👉 Next: is returned at 0.75" {
+  mkcontrol "$(verdict MISSED_ACTION 0.75 'announced and stopped' 'Run the tests')"
+  run run_hook 'Retries are in.
+
+👉 Next: adding unit tests for the retry path.'
+  echo "$output" | jq -e '.decision == "block"'
+}
+
+@test "announcement: a question keeps the 0.90 threshold" {
+  mkcontrol "$(verdict MISSED_ACTION 0.75 'announced and asked' 'Run the tests')"
+  run run_hook '👉 Next: should I add the tests?'
+  [[ "$output" != *decision* ]]
+}
+
+@test "announcement: a fenced 👉 line or a defer marker does not lower the threshold" {
+  mkcontrol "$(verdict MISSED_ACTION 0.75 'announced' 'Run the tests')"
+  run run_hook '```text
+👉 Next: adding tests.
+```
+🚧 waiting for the background agent.'
+  [[ "$output" != *decision* ]]
+}

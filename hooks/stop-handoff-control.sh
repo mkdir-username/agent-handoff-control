@@ -417,7 +417,21 @@ case "$VERDICT" in
     ;;
 esac
 
-ABOVE=$(awk -v c="$CONF" -v t="$THRESHOLD" 'BEGIN{print (c+0 >= t+0) ? 1 : 0}')
+# A final that ends on a bare "👉 Next: <own step>" admits the step is needed and available.
+# That is a fact about the final, not a judgement call, so the block threshold drops for it.
+# A question mark or a defer marker means the agent did not announce work but asked or waited.
+ANNOUNCE_LINE=$(printf '%s' "$LAST_TEXT" | awk '/^[[:space:]]*```/{f=!f; next} !f' \
+  | command grep -F '👉' | tail -n 1)
+ANNOUNCE_BOUND=""
+if [ -n "$ANNOUNCE_LINE" ] \
+   && ! printf '%s' "$ANNOUNCE_LINE" | command grep -qE '\?([[:space:]]|$)' \
+   && ! printf '%s' "$ANNOUNCE_LINE" | command grep -qE '🚧|\b(waiting|wait|blocked|approval|permission|after|once|when)\b'; then
+  ANNOUNCE_BOUND=1
+fi
+EFF_THRESHOLD=$THRESHOLD
+[ "$VERDICT" = "MISSED_ACTION" ] && [ -n "$ANNOUNCE_BOUND" ] \
+  && EFF_THRESHOLD="${HANDOFF_CTL_ANNOUNCE_THRESHOLD:-0.70}"
+ABOVE=$(awk -v c="$CONF" -v t="$EFF_THRESHOLD" 'BEGIN{print (c+0 >= t+0) ? 1 : 0}')
 # No "one block per session" limit: stop_hook_active already prevents a repeat inside one cascade,
 # so the turn is returned at most once per user message plus one continuation.
 BLOCKED=false
