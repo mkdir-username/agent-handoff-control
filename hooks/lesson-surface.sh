@@ -63,6 +63,11 @@ The return ceiling is exhausted, so this is only a lesson. Same rule:"
 Do not roll back. Verify what was removed with tools (find every reference, call graph, dead-code
 analyzer) and end your next final with a ⚠️ RESPONSIBLE ZONE block: what was removed,
 \"Evidence:\" command → result, \"Rollback:\" command, and \"Ok / not ok?\"."
+  elif [ "$VERD" = "SHELVED" ] && fresh "$TS" "$DELIVER_MAX"; then
+    add_part "💡 SHELVED IMPROVEMENT — the turn-handoff controller reviewed the previous final: $WHY
+What you could have done yourself: $ACT
+The turn was not returned: this is an invitation to reconsider, not an order. Do it now, or write
+\"Deferred: <what> — <reason>\"."
   elif fresh "$TS" "$DELIVER_MAX"; then
     add_part "⚠️ TURN HANDED BACK UNFINISHED — the turn-handoff controller reviewed the previous final: $WHY
 What you should have done yourself: $ACT

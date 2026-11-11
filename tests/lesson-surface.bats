@@ -60,6 +60,16 @@ ctx()  { printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext'; 
   [ ! -f "$ST/t1.missed" ]
 }
 
+@test "SHELVED is an invitation to reconsider, not the unfinished-task lesson" {
+  jq -nc --argjson ts "$(date +%s)" \
+    '{ts:$ts, why:"named an improvement and left it", action:"Do it or write Deferred with a reason", verdict:"SHELVED", reason:"shelved"}' \
+    > "$ST/t1.missed"
+  run fire
+  [[ "$(ctx)" == *"SHELVED"* ]]
+  [[ "$(ctx)" == *"Do it or write Deferred"* ]]
+  [[ "$(ctx)" != *"TURN HANDED BACK UNFINISHED"* ]]
+}
+
 @test "an open obligation is a reminder and is NOT consumed" {
   jq -nc --argjson ts "$(date +%s)" '{action:"Finish the build", why:"announced", set_at:$ts, iterations:1}' > "$ST/t1.obligation"
   run fire

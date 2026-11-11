@@ -10,7 +10,7 @@ setup() {
 }
 
 @test "controller rubric names every verdict and the JSON schema" {
-  for v in OK DUMB_QUESTION MISSED_ACTION DELAYED_ANSWER UNFLAGGED_RISK; do grep -q "$v" "$R/handoff-control.md"; done
+  for v in OK DUMB_QUESTION SHELVED MISSED_ACTION DELAYED_ANSWER UNFLAGGED_RISK FALSE_COMPLETION; do grep -q "$v" "$R/handoff-control.md"; done
   grep -q '"verdict":' "$R/handoff-control.md"
   grep -q '"danger":' "$R/handoff-control.md"
 }

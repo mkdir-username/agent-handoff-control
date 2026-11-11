@@ -1104,3 +1104,26 @@ sent() { for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$BATS_TEST_TMPDIR/n.txt" ] && b
   run sent
   [ "${lines[2]}" = "🛑 HANDOFF  ·  Judge unreachable" ]
 }
+
+# ── SHELVED and FALSE_COMPLETION ───────────────────────────────────────────────────────────
+
+@test "SHELVED never returns the turn and leaves a lesson" {
+  mkcontrol "$(verdict SHELVED 0.95 'named an improvement and left it' 'Do it or write Deferred with a reason')"
+  run run_hook 'Nice-to-have: switch the client to streaming. I will leave it unless you say.'
+  [[ "$output" != *decision* ]]
+  jq -e '.verdict == "SHELVED"' "$ST/t1.missed"
+}
+
+@test "FALSE_COMPLETION returns the turn at the normal threshold" {
+  mkcontrol "$(verdict FALSE_COMPLETION 0.95 'claims done while naming an unrun check' 'Run the check and report')"
+  run run_hook 'All done. I did not run the tests yet.'
+  echo "$output" | jq -e '.decision == "block"'
+}
+
+@test "FALSE_COMPLETION is returned once more in a cascade" {
+  in_cascade 1
+  mkcontrol "$(verdict FALSE_COMPLETION 0.95 'claims done with an open part' 'Finish the open part')"
+  run run_hook 'Everything is finished.' true
+  echo "$output" | jq -e '.decision == "block"'
+  [ "$(cat "$ST/t1.cascade")" = "2" ]
+}

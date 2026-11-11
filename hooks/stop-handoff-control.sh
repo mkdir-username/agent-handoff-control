@@ -187,6 +187,8 @@ handoff_notify() {   # <verdict> <text>
     MISSED_ACTION)  what="Missed action" ;;
     DUMB_QUESTION)  what="Needless question" ;;
     UNFLAGGED_RISK) what="Unflagged risk" ;;
+    SHELVED)          what="Shelved improvement" ;;
+    FALSE_COMPLETION) what="False completion" ;;
     OBLIGATION)     what="Promise not kept" ;;
     *)              what="$1" ;;
   esac
@@ -428,6 +430,7 @@ if [ "$VERDICT" != "OK" ] && [ "$ABOVE" = "1" ]; then
       [ $(( $(date +%s) - COOL )) -ge "${HANDOFF_CTL_COOLDOWN:-600}" ] && BLOCKED=true
       ;;
     DELAYED_ANSWER) ;;
+    SHELVED) : ;;   # never a hard block: one soft invitation to reconsider
     *) BLOCKED=true ;;
   esac
 fi
@@ -436,7 +439,8 @@ fi
 # this chain. Ceiling: one repeated return per chain.
 if [ "$CONTINUED" != "0" ]; then
   BLOCKED=false
-  { [ "$VERDICT" = "MISSED_ACTION" ] || [ "$VERDICT" = "DUMB_QUESTION" ] || [ "$VERDICT" = "UNFLAGGED_RISK" ]; } \
+  { [ "$VERDICT" = "MISSED_ACTION" ] || [ "$VERDICT" = "DUMB_QUESTION" ] || [ "$VERDICT" = "UNFLAGGED_RISK" ] \
+    || [ "$VERDICT" = "FALSE_COMPLETION" ]; } \
     && [ "$ABOVE" = "1" ] && [ "$CASCADE" -lt 2 ] && BLOCKED=true
 fi
 
@@ -489,12 +493,14 @@ fi
 
 # No block — the verdict must not just sit in the log: the lesson reaches the next turn through
 # lesson-surface.sh. Lower threshold for the same reason as DELAYED_ANSWER.
-if { [ "$VERDICT" = "MISSED_ACTION" ] || [ "$VERDICT" = "DUMB_QUESTION" ] || [ "$VERDICT" = "UNFLAGGED_RISK" ]; } \
+if { [ "$VERDICT" = "MISSED_ACTION" ] || [ "$VERDICT" = "DUMB_QUESTION" ] || [ "$VERDICT" = "UNFLAGGED_RISK" ] \
+     || [ "$VERDICT" = "SHELVED" ]; } \
    && [ "$BLOCKED" != "true" ] \
    && { [ -z "$SUPPRESSED" ] || [ "$SUPPRESSED" = "bg_agents_pending" ]; }; then
   SOFT_ABOVE=$(awk -v c="$CONF" -v t="$SOFT_THRESHOLD" 'BEGIN{print (c+0 >= t+0) ? 1 : 0}')
   # The lesson names the real reason for not returning the turn.
-  if [ "$SUPPRESSED" = "bg_agents_pending" ]; then REASON=bg_pending
+  if [ "$VERDICT" = "SHELVED" ]; then REASON=shelved
+  elif [ "$SUPPRESSED" = "bg_agents_pending" ]; then REASON=bg_pending
   elif [ "$ABOVE" != "1" ]; then REASON=below
   elif [ "$CONTINUED" != "0" ]; then REASON=ceiling
   else REASON=cooldown
